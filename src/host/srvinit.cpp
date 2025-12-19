@@ -544,6 +544,11 @@ try
 
     myStartupInfo.wShowWindow = settings.GetShowWindow();
 
+    {
+        HRESULT hr = CoAllowSetForegroundWindow(handoff.Get(), nullptr);
+        TraceLoggingWrite(g_hConhostV2EventTraceProvider, "PtyHandoffAllowSetForegroundWindow", TraceLoggingHResult(hr));
+    }
+
     wil::unique_handle inPipeOurSide;
     wil::unique_handle outPipeOurSide;
     RETURN_IF_FAILED(handoff->EstablishPtyHandoff(inPipeOurSide.addressof(),

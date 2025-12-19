@@ -6,10 +6,19 @@
 #include <wil/stl.h>
 #include <wil/resource.h>
 #include <wil/win32_helpers.h>
+#include <TraceLoggingProvider.h>
+
+TRACELOGGING_DECLARE_PROVIDER(g_hProvider1);
+TRACELOGGING_DEFINE_PROVIDER(
+    g_hProvider1,
+    "Microsoft.Windows.Terminal.Shim",
+    // tl:{d295502a-ab39-5565-c342-6e6d7659a422}
+    (0xd295502a,0xab39,0x5565,0xc3,0x42,0x6e,0x6d,0x76,0x59,0xa4,0x22));
 
 #pragma warning(suppress : 26461) // we can't change the signature of wWinMain
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR pCmdLine, int)
 {
+    TraceLoggingRegister(g_hProvider1);
     std::filesystem::path module{ wil::GetModuleFileNameW<std::wstring>(nullptr) };
 
     // Cache our name (wt, wtd)
@@ -32,5 +41,18 @@ int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR pCmdLine, int)
 
     // Go!
     wil::unique_process_information pi;
-    return !CreateProcessW(module.c_str(), cmdline.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    if (!CreateProcessW(module.c_str(), cmdline.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
+    {
+        return 1;
+    }
+
+    DWORD lastError = 0;
+    if (!AllowSetForegroundWindow(pi.dwProcessId))
+    {
+        lastError = GetLastError();
+    }
+    TraceLoggingWrite(g_hProvider1, "ShimAllowSetForeground", TraceLoggingWinError(lastError, "lastError"));
+
+    ResumeThread(pi.hThread);
+    return 0;
 }
