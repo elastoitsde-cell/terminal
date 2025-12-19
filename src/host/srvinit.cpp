@@ -544,6 +544,7 @@ try
 
     myStartupInfo.wShowWindow = settings.GetShowWindow();
 
+    if (IsApiSetImplemented("ext-ms-win-com-ole32-l1-1-1"))
     {
         HRESULT hr = CoAllowSetForegroundWindow(handoff.Get(), nullptr);
         TraceLoggingWrite(g_hConhostV2EventTraceProvider, "PtyHandoffAllowSetForegroundWindow", TraceLoggingHResult(hr));
