@@ -678,12 +678,12 @@ void BackendD3D::_debugUpdateShaders(const RenderingPayload& p) noexcept
         struct FileVS
         {
             std::wstring_view filename;
-            wil::com_ptr<ID3D11VertexShader> BackendD3D::*target;
+            wil::com_ptr<ID3D11VertexShader> BackendD3D::* target;
         };
         struct FilePS
         {
             std::wstring_view filename;
-            wil::com_ptr<ID3D11PixelShader> BackendD3D::*target;
+            wil::com_ptr<ID3D11PixelShader> BackendD3D::* target;
         };
 
         static constexpr std::array filesVS{
@@ -1784,37 +1784,51 @@ void BackendD3D::_drawGridlines(const RenderingPayload& p, u16 y)
         auto posX = r.from * cellSize.x + offset;
         const auto end = r.to * cellSize.x;
 
+        const auto colors = &p.foregroundBitmap[p.colorBitmapRowStride * y];
+
         for (; posX < end; posX += textCellWidth)
         {
             _appendQuad() = {
                 .shadingType = static_cast<u16>(ShadingType::SolidLine),
                 .position = { static_cast<i16>(posX), rowTop },
                 .size = { width, p.s->font->cellSize.y },
-                .color = r.gridlineColor,
+                .color = colors[r.from],
             };
         }
     };
-    const auto appendHorizontalLine = [&](const GridLineRange& r, FontDecorationPosition pos, ShadingType shadingType, const u32 color) {
+    const auto appendHorizontalLine = [&](const GridLineRange& r, FontDecorationPosition pos, ShadingType shadingType, const std::span<const u32>& colorBitmap) {
         const auto offset = pos.position << verticalShift;
         const auto height = static_cast<u16>(pos.height << verticalShift);
-
-        const auto left = static_cast<i16>(r.from * cellSize.x);
-        const auto width = static_cast<u16>((r.to - r.from) * cellSize.x);
 
         i32 rt = textCellTop + offset;
         i32 rb = rt + height;
         rt = clamp(rt, clipTop, clipBottom);
         rb = clamp(rb, clipTop, clipBottom);
 
+        const auto colors = &colorBitmap[p.colorBitmapRowStride * y];
+
         if (rt < rb)
         {
-            _appendQuad() = {
-                .shadingType = static_cast<u16>(shadingType),
-                .renditionScale = { static_cast<u8>(1 << horizontalShift), static_cast<u8>(1 << verticalShift) },
-                .position = { left, static_cast<i16>(rt) },
-                .size = { width, static_cast<u16>(rb - rt) },
-                .color = color,
-            };
+            for (auto from = r.from; from < r.to;)
+            {
+                const auto start = colors[from];
+                u16 w = 1u;
+                for (; colors[from + w] == start && w < (r.to - r.from); ++w)
+                    ;
+
+                const auto left = static_cast<i16>(from * cellSize.x);
+                const auto width = static_cast<u16>(w * cellSize.x);
+
+                _appendQuad() = {
+                    .shadingType = static_cast<u16>(shadingType),
+                    .renditionScale = { static_cast<u8>(1 << horizontalShift), static_cast<u8>(1 << verticalShift) },
+                    .position = { left, static_cast<i16>(rt) },
+                    .size = { width, static_cast<u16>(rb - rt) },
+                    .color = start,
+                };
+
+                from += w;
+            }
         }
     };
 
@@ -1833,38 +1847,38 @@ void BackendD3D::_drawGridlines(const RenderingPayload& p, u16 y)
         }
         if (r.lines.test(GridLines::Top))
         {
-            appendHorizontalLine(r, p.s->font->gridTop, ShadingType::SolidLine, r.gridlineColor);
+            appendHorizontalLine(r, p.s->font->gridTop, ShadingType::SolidLine, p.foregroundBitmap);
         }
         if (r.lines.test(GridLines::Bottom))
         {
-            appendHorizontalLine(r, p.s->font->gridBottom, ShadingType::SolidLine, r.gridlineColor);
+            appendHorizontalLine(r, p.s->font->gridBottom, ShadingType::SolidLine, p.foregroundBitmap);
         }
         if (r.lines.test(GridLines::Strikethrough))
         {
-            appendHorizontalLine(r, p.s->font->strikethrough, ShadingType::SolidLine, r.gridlineColor);
+            appendHorizontalLine(r, p.s->font->strikethrough, ShadingType::SolidLine, p.foregroundBitmap);
         }
 
         if (r.lines.test(GridLines::Underline))
         {
-            appendHorizontalLine(r, p.s->font->underline, ShadingType::SolidLine, r.underlineColor);
+            appendHorizontalLine(r, p.s->font->underline, ShadingType::SolidLine, p.underlineBitmap);
         }
         else if (r.lines.any(GridLines::DottedUnderline, GridLines::HyperlinkUnderline))
         {
-            appendHorizontalLine(r, p.s->font->underline, ShadingType::DottedLine, r.underlineColor);
+            appendHorizontalLine(r, p.s->font->underline, ShadingType::DottedLine, p.underlineBitmap);
         }
         else if (r.lines.test(GridLines::DashedUnderline))
         {
-            appendHorizontalLine(r, p.s->font->underline, ShadingType::DashedLine, r.underlineColor);
+            appendHorizontalLine(r, p.s->font->underline, ShadingType::DashedLine, p.underlineBitmap);
         }
         else if (r.lines.test(GridLines::CurlyUnderline))
         {
-            appendHorizontalLine(r, _curlyUnderline, ShadingType::CurlyLine, r.underlineColor);
+            appendHorizontalLine(r, _curlyUnderline, ShadingType::CurlyLine, p.underlineBitmap);
         }
         else if (r.lines.test(GridLines::DoubleUnderline))
         {
             for (const auto pos : p.s->font->doubleUnderline)
             {
-                appendHorizontalLine(r, pos, ShadingType::SolidLine, r.underlineColor);
+                appendHorizontalLine(r, pos, ShadingType::SolidLine, p.underlineBitmap);
             }
         }
     }
